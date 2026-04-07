@@ -74,7 +74,7 @@
 <script>
     const SIG = "MP5FMT";
 
-    // --- ENCODING ENGINE ---
+    // --- ENCODER ---
     document.getElementById('convInput').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -85,9 +85,13 @@
         const buffer = await file.arrayBuffer();
 
         // Detect type
-        let type = file.type.startsWith("audio/") ? "type:audio\n" : "type:video\n";
+        let isAudio = file.type.startsWith("audio/");
+        let type = isAudio ? "type:audio\n" : "type:video\n";
 
-        const headerBlob = new Blob([SIG + type]);
+        // Store real MIME type (THIS is the MP3 fix)
+        let mime = "mime:" + file.type + "\n";
+
+        const headerBlob = new Blob([SIG + type + mime]);
         const outputBlob = new Blob([headerBlob, buffer], { type: 'application/octet-stream' });
 
         const link = document.createElement('a');
@@ -98,7 +102,7 @@
         status.innerText = `ENCODING COMPLETE: ${link.download}`;
     });
 
-    // --- DECODING PLAYER ---
+    // --- PLAYER ---
     document.getElementById('playInput').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         const video = document.getElementById('mp5Video');
@@ -107,26 +111,30 @@
         if (!file) return;
 
         const buffer = await file.arrayBuffer();
-        const text = new TextDecoder().decode(buffer.slice(0, 32));
+        const text = new TextDecoder().decode(buffer.slice(0, 128));
 
         if (text.startsWith(SIG)) {
             status.innerHTML = "PROTOCOL VERIFIED. DECODING STREAM...";
 
             let isAudio = text.includes("type:audio");
 
+            // Extract MIME type
+            let mimeMatch = text.match(/mime:(.*)/);
+            let mimeType = mimeMatch ? mimeMatch[1].trim() : (isAudio ? "audio/mpeg" : "video/mp4");
+
             // Find header end
-            let headerEnd = text.indexOf("\n") + 1 + SIG.length;
+            let headerEnd = text.indexOf("\n", text.indexOf("mime:")) + 1;
 
             const stream = buffer.slice(headerEnd);
 
+            const blob = new Blob([stream], { type: mimeType });
+
             if (isAudio) {
-                const blob = new Blob([stream], { type: 'audio/mpeg' });
                 audio.src = URL.createObjectURL(blob);
                 audio.style.display = "block";
                 video.style.display = "none";
                 audio.play();
             } else {
-                const blob = new Blob([stream], { type: 'video/mp4' });
                 video.src = URL.createObjectURL(blob);
                 video.style.display = "block";
                 audio.style.display = "none";
