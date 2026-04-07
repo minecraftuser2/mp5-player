@@ -19,7 +19,7 @@
         }
         
         h2 { text-transform: uppercase; letter-spacing: 4px; border-bottom: 1px solid var(--matrix); padding-bottom: 10px; margin-bottom: 25px; }
-        video { width: 100%; background: #000; border: 1px solid #222; border-radius: 2px; margin-top: 15px; }
+        video, audio { width: 100%; background: #000; border: 1px solid #222; border-radius: 2px; margin-top: 15px; }
         
         .action-btn {
             display: inline-block;
@@ -36,7 +36,7 @@
         .action-btn:hover { background: #fff; box-shadow: 0 0 20px var(--matrix); }
         
         input[type="file"] { display: none; }
-        .status { font-size: 0.8rem; color: var(--matrix); opacity: 0.7; margin-top: 15px; border-top: 1px hideen #333; padding-top: 10px; }
+        .status { font-size: 0.8rem; color: var(--matrix); opacity: 0.7; margin-top: 15px; border-top: 1px hidden #333; padding-top: 10px; }
         
         .glitch { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
@@ -52,7 +52,7 @@
             <p>Target: MP5 Proprietary Format</p>
             
             <label for="convInput" class="action-btn">Initialize Conversion</label>
-            <input type="file" id="convInput" accept="video/mp4,video/quicktime">
+            <input type="file" id="convInput" accept="video/mp4,video/quicktime,audio/mpeg,audio/wav">
             
             <div id="convStatus" class="status">System Idle...</div>
         </div>
@@ -62,6 +62,7 @@
             <p>Source: .MP5 Encrypted Stream</p>
             
             <video id="mp5Video" controls></video>
+            <audio id="mp5Audio" controls style="display:none;"></audio>
             
             <label for="playInput" class="action-btn">Load MP5 Data</label>
             <input type="file" id="playInput" accept=".mp5">
@@ -71,7 +72,7 @@
     </div>
 
 <script>
-    const SIG = "MP5!";
+    const SIG = "MP5FMT";
 
     // --- ENCODING ENGINE ---
     document.getElementById('convInput').addEventListener('change', async (e) => {
@@ -82,8 +83,12 @@
         status.innerText = "READING SOURCE BINARY...";
 
         const buffer = await file.arrayBuffer();
-        const sigBlob = new Blob([SIG]);
-        const outputBlob = new Blob([sigBlob, buffer], { type: 'application/octet-stream' });
+
+        // Detect type
+        let type = file.type.startsWith("audio/") ? "type:audio\n" : "type:video\n";
+
+        const headerBlob = new Blob([SIG + type]);
+        const outputBlob = new Blob([headerBlob, buffer], { type: 'application/octet-stream' });
 
         const link = document.createElement('a');
         link.href = URL.createObjectURL(outputBlob);
@@ -97,27 +102,41 @@
     document.getElementById('playInput').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         const video = document.getElementById('mp5Video');
+        const audio = document.getElementById('mp5Audio');
         const status = document.getElementById('playStatus');
         if (!file) return;
 
         const buffer = await file.arrayBuffer();
-        const view = new DataView(buffer);
+        const text = new TextDecoder().decode(buffer.slice(0, 32));
 
-        let check = "";
-        try {
-            for(let i=0; i<4; i++) check += String.fromCharCode(view.getUint8(i));
-        } catch(err) { check = ""; }
-
-        if (check === SIG) {
+        if (text.startsWith(SIG)) {
             status.innerHTML = "PROTOCOL VERIFIED. DECODING STREAM...";
-            
-            const stream = buffer.slice(4);
-            const blob = new Blob([stream], { type: 'video/mp4' });
-            video.src = URL.createObjectURL(blob);
-            video.play();
+
+            let isAudio = text.includes("type:audio");
+
+            // Find header end
+            let headerEnd = text.indexOf("\n") + 1 + SIG.length;
+
+            const stream = buffer.slice(headerEnd);
+
+            if (isAudio) {
+                const blob = new Blob([stream], { type: 'audio/mpeg' });
+                audio.src = URL.createObjectURL(blob);
+                audio.style.display = "block";
+                video.style.display = "none";
+                audio.play();
+            } else {
+                const blob = new Blob([stream], { type: 'video/mp4' });
+                video.src = URL.createObjectURL(blob);
+                video.style.display = "block";
+                audio.style.display = "none";
+                video.play();
+            }
+
         } else {
             status.innerHTML = "<span style='color:#ff0000'>CRITICAL ERROR: INVALID MP5 STRUCTURE</span>";
             video.src = "";
+            audio.src = "";
         }
     });
 </script>
